@@ -3,14 +3,28 @@ import egttools as egt
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from abc import ABC, abstractmethod
+from collections import Counter
+import random
+
 from egttools.games import Matrix2PlayerGameHolder
 from scipy.integrate import odeint
+
+colors = ["black", "green", "red", "blue"]
+strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
 
 # Single game (Trust game, binary decision)
 # A receives R = 1 - x + 3xr, can Trust (T) or not (N)
 # B receives R = 3x(1-r), can Reciprocate (R) or Betray (B)
 # Strategies are a combination of A,B (T,R), (T,B), (N,R), (N,B)
 nb_strategies = 4
+
+
+def act2int(action: str):
+    if action == "T" or action == "R":
+        return 0
+    else:
+        return 1
 
 
 def gen_trust_matrix(x=1, r=0.5):
@@ -46,15 +60,81 @@ def gen_strategies_matrix(x=1, r=0.5):
                 matrix[i, j] = np.sum(base[i // 2, j % 2])/2
     return matrix
 
+# Multiple network types - pair are generated from connected nodes
+# well-mixed, lattice (triangle, square, hexagon), random and scale-free
+# heterogeneous networks can consider different degree (normalized) or not
+# unnormalized scale-free network is the only to evolve trust
+
+
+class AgentNetwork(ABC):
+    @abstractmethod
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        pass
+
+    @abstractmethod
+    def get_strategy(self, agent):
+        pass
+
+    @abstractmethod
+    def set_strategy(self, agent, strategy):
+        pass
+
+    @abstractmethod
+    def get_ratios(self):
+        pass
+
+    @abstractmethod
+    def get_size(self):
+        pass
+
+
+class WellMixed(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.strategies = random.choices(strategy_labels, k=size)
+
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = [x for x in range(self.size) if x != agent]
+        if replacement:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
+
+    def get_strategy(self, agent):
+        return self.strategies[agent]
+
+    def set_strategy(self, agent, strategy):
+        if strategy in strategy_labels:
+            self.strategies[agent] = strategy
+            return
+        else:
+            raise ValueError("Setting invalid strategy: " + str(strategy))
+
+    def get_ratios(self):
+        count = Counter(self.strategies)
+        ratios = np.empty(nb_strategies)
+        for i, strategy in enumerate(strategy_labels):
+            ratios[i] = count[strategy]
+        return ratios/self.size
+
+    def get_size(self):
+        return self.size
+
+    def __str__(self):
+        return str(self.strategies)
+
 
 # Simulation
 # Copy of other players actions with probability from eq. 2.1
+# 1 / ( 1 + e^(tot_payoff_p2-tot_payoff_p1)/K ) for K=0.1
 # number of MC steps equals to population size N=500
 # Initializes each player randomly
 # consists in chosing two players P1, P2 and playing the game w/ 4 neighbors
 
 x, r = (0.8, 0.3)
 game_matrix = gen_strategies_matrix(x, r)
+game_matrix = gen_trust_matrix(x, r)
 print(game_matrix)
 # game = Matrix2PlayerGameHolder(4, game_matrix)
 
@@ -63,45 +143,64 @@ nb_time_steps = 1000
 t = np.arange(0, 10, 10/nb_time_steps)
 
 
-def run_replicator_dynamics(
-        t: np.ndarray,
+def simulation_step(
+        network: AgentNetwork,
         payoff_matrix: np.ndarray,
-        nb_runs: int,
-        initial_state=None,
         ):
+    N_PLAYERS = 2
+    N_GAMES = 4
+    K = 0.1
 
-    results = []
-    for i in range(nb_runs):
-        if initial_state is None:
-            x0 = egt.sample_unit_simplex(nb_strategies)
-        else:
-            assert 0.999 < np.sum(initial_state) < 1.001
-            x0 = initial_state
-        result = odeint(
-                lambda x, t:
-                egt.analytical.replicator_equation(x, payoff_matrix),
-                x0, t)
-        results.append(result)
+    # sample 2 players
+    players = random.sample(range(network.get_size()), N_PLAYERS)
+    payoffs = N_PLAYERS*[0]
+    for play_idx, player in enumerate(players):
+        # plays 4 games for each player
+        adversaries = network.sample_neighbors(player, n=N_GAMES)
+        for adversary in adversaries:
 
+            # decide roles
+            role = random.randint(0, 1)  # 0 player sends, 1 player receive
+            # gets actions
+            if role == 0:
+                act0 = network.get_strategy(player)[1]
+                act1 = network.get_strategy(adversary)[3]
+            else:
+                act0 = network.get_strategy(adversary)[1]
+                act1 = network.get_strategy(player)[3]
+            # calculates payoff for the game
+            payoff = payoff_matrix[act2int(act0), act2int(act1), role]
+
+            payoffs[play_idx] += payoff
+
+        # p2 copies p1 with chance w
+        w = 1 / (1 + np.exp(payoffs[1]-payoffs[0])/K)
+        if random.random() < w:
+            network.set_strategy(players[1],
+                                 network.get_strategy(players[0]))
+
+    return network
+
+
+def run_simulation(payoff_matrix: np.ndarray):
+    results = np.empty((nb_runs, nb_time_steps, nb_strategies))
+    for run in range(nb_runs):
+        network = WellMixed(100)
+        for timestep in range(nb_time_steps):
+            network = simulation_step(network, payoff_matrix)
+            results[run, timestep] = network.get_ratios()
     return results
 
 
-results = run_replicator_dynamics(t, game_matrix, nb_runs)
+results = run_simulation(game_matrix)
 results = np.asarray(results)
-
-
-# Multiple network types - pair are generated from connected nodes
-# well-mixed, lattice (triangle, square, hexagon), random and scale-free
-# heterogeneous networks can consider different degree (normalized) or not
-# unnormalized scale-free network is the only to evolve trust
 
 # Types of plot:
 # 1. Proportion of population sweeping through x and r
 # 2. Evolution Through time given x and r
 
 # Plot for population evolution
-colors = ["green", "red", "blue", "black"]
-strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
+
 fig, ax = plt.subplots(figsize=(10, 3))
 
 for run in results:
@@ -121,7 +220,9 @@ ax.set_xlabel("time step, $t$", fontsize=14)
 sns.despine()
 plt.show()
 
+
 # Sweep plot
+
 xs = np.linspace(0, 1, 20)
 rs = np.linspace(0, 1, 20)
 nb_runs = 10  # 1000
@@ -163,11 +264,11 @@ def plot_heatmaps(avg_results):
 final_proportions = np.empty((xs.shape[0], rs.shape[0], nb_strategies))
 for i, x in enumerate(xs):
     for j, r in enumerate(rs):
-        payoff = gen_strategies_matrix(x, r)
-        result = np.array(run_replicator_dynamics(t, payoff, nb_runs))
+        payoff = gen_trust_matrix(x, r)
+        result = np.array(run_simulation(payoff))
+        print(x, r)
         final_proportions[i, j] = np.sum(result[:, -1, :], axis=0)/nb_runs
 plot_heatmaps(final_proportions)
-
 
 # Research question - what if keep memory of neighbor, can we train for (x,r)?
 
