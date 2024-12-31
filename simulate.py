@@ -2,6 +2,7 @@ import numpy as np
 import egttools as egt
 import seaborn as sns
 import matplotlib.pyplot as plt
+import networkx as nx
 
 from abc import ABC, abstractmethod
 from collections import Counter
@@ -76,47 +77,6 @@ class AgentNetwork(ABC):
     def sample_neighbors(self, agent, n=4, replacement=True):
         pass
 
-    @abstractmethod
-    def get_strategy(self, agent):
-        pass
-
-    @abstractmethod
-    def set_strategy(self, agent, strategy):
-        pass
-
-    @abstractmethod
-    def get_ratios(self):
-        pass
-
-    @abstractmethod
-    def get_size(self):
-        pass
-
-
-class WellMixed(AgentNetwork):
-    def __init__(self, size):
-        self.size = size
-        self.strategies = random.choices(strategy_labels, k=size)
-
-        self.cs = 1024  # cache size
-        self.sample_cache = []  # improves sampling performance
-        for _ in range(self.size):
-            self.sample_cache.append([self.cs, np.empty((self.cs, 4))])
-
-    def sample_neighbors(self, agent, n=4, replacement=True):
-        if replacement:
-            if self.sample_cache[agent][0] >= self.cs:
-                neighbors = [x for x in range(self.size) if x != agent]
-                self.sample_cache[agent][1] = np.random.choice(neighbors,
-                                                               (self.cs, n))
-                self.sample_cache[agent][0] = 0
-            agents = self.sample_cache[agent][1][self.sample_cache[agent][0]]
-            self.sample_cache[agent][0] += 1
-        else:
-            neighbors = [x for x in range(self.size) if x != agent]
-            agents = random.sample(neighbors, n)
-        return agents
-
     def get_strategy(self, agent):
         return self.strategies[agent]
 
@@ -136,10 +96,106 @@ class WellMixed(AgentNetwork):
 
     def get_size(self):
         return self.size
-
+    
     def __str__(self):
         return str(self.strategies)
+    
 
+class WellMixed(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.strategies = random.choices(strategy_labels, k=size)
+        self.cs = 1024  # cache size
+        self.sample_cache = []  # improves sampling performance
+        for _ in range(self.size):
+            self.sample_cache.append([self.cs, np.empty((self.cs, 4))])
+
+
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        if replacement:
+            if self.sample_cache[agent][0] >= self.cs:
+                neighbors = [x for x in range(self.size) if x != agent]
+                self.sample_cache[agent][1] = np.random.choice(neighbors,
+                                                               (self.cs, n))
+                self.sample_cache[agent][0] = 0
+            agents = self.sample_cache[agent][1][self.sample_cache[agent][0]]
+            self.sample_cache[agent][0] += 1
+        else:
+            neighbors = [x for x in range(self.size) if x != agent]
+            agents = random.sample(neighbors, n)
+        return agents
+
+
+class SquareLattice(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.rows = self.size**(1/2)
+        self.cols = self.size**(1/2)
+        self.network = self._create_square_lattice(self.rows, self.cols)
+        self.strategies = random.choices(strategy_labels, k=self.size)
+
+    def create_square_lattice(rows, cols):
+        G = nx.grid_2d_graph(rows, cols, periodic=True) #must remain to True, otherwise the network is padded
+        mapping = {node: idx for idx, node in enumerate(G.nodes)}
+        # Relabel nodes in the graph using the mapping 
+        # (G is first created with tuples representing nodes id and coordinates 
+        # but since we want to sample over them, it's easier with one dimensional identificator)
+        G = nx.relabel_nodes(G, mapping)
+        return G    
+    
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = list(self.network.neighbors(agent))
+        if replacement or len(neighbors) < n:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
+
+
+class TriangleLattice(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.rows = self.size**(1/2)
+        self.cols = self.size**(1/2)
+        self.network = self._create_triangular_lattice(self.rows, self.cols)
+        self.strategies = random.choices(strategy_labels, k=self.size)
+
+    def _create_triangular_lattice(rows, cols):
+        G = nx.triangular_lattice_graph(rows, cols, periodic=True) 
+        mapping = {node: idx for idx, node in enumerate(G.nodes)}
+        G = nx.relabel_nodes(G, mapping)
+        return G
+    
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = list(self.network.neighbors(agent))
+        if replacement or len(neighbors) < n:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
+
+
+class HexagonLattice(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.rows = self.size**(1/2)
+        self.cols = self.size**(1/2)
+        self.network = self._create_hexagonal_lattice(self.rows, self.cols)
+        self.strategies = random.choices(strategy_labels, k=self.size)
+
+    def _create_hexagonal_lattice(rows, cols):
+        G = nx.hexagonal_lattice_graph(rows, cols, periodic=True)
+        mapping = {node: idx for idx, node in enumerate(G.nodes)}
+        G = nx.relabel_nodes(G, mapping)
+        return G
+    
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = list(self.network.neighbors(agent))
+        if replacement or len(neighbors) < n:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
 
 # Simulation
 # Copy of other players actions with probability from eq. 2.1
