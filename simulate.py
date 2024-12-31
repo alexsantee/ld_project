@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from collections import Counter
 import random
 
+from multiprocessing import Pool
+
 from egttools.games import Matrix2PlayerGameHolder
 from scipy.integrate import odeint
 
@@ -18,6 +20,9 @@ strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
 # B receives R = 3x(1-r), can Reciprocate (R) or Betray (B)
 # Strategies are a combination of A,B (T,R), (T,B), (N,R), (N,B)
 nb_strategies = 4
+nb_runs = 128
+nb_time_steps = 20
+n_threads = 16
 
 
 def act2int(action: str):
@@ -93,11 +98,22 @@ class WellMixed(AgentNetwork):
         self.size = size
         self.strategies = random.choices(strategy_labels, k=size)
 
+        self.cs = 1024  # cache size
+        self.sample_cache = []  # improves sampling performance
+        for _ in range(self.size):
+            self.sample_cache.append([self.cs, np.empty((self.cs, 4))])
+
     def sample_neighbors(self, agent, n=4, replacement=True):
-        neighbors = [x for x in range(self.size) if x != agent]
         if replacement:
-            agents = np.random.choice(neighbors, n)
+            if self.sample_cache[agent][0] >= self.cs:
+                neighbors = [x for x in range(self.size) if x != agent]
+                self.sample_cache[agent][1] = np.random.choice(neighbors,
+                                                               (self.cs, n))
+                self.sample_cache[agent][0] = 0
+            agents = self.sample_cache[agent][1][self.sample_cache[agent][0]]
+            self.sample_cache[agent][0] += 1
         else:
+            neighbors = [x for x in range(self.size) if x != agent]
             agents = random.sample(neighbors, n)
         return agents
 
@@ -138,9 +154,7 @@ game_matrix = gen_trust_matrix(x, r)
 print(game_matrix)
 # game = Matrix2PlayerGameHolder(4, game_matrix)
 
-nb_runs = 1000
-nb_time_steps = 1000
-t = np.arange(0, 10, 10/nb_time_steps)
+t = np.arange(0, nb_time_steps)
 
 
 def simulation_step(
@@ -182,13 +196,22 @@ def simulation_step(
     return network
 
 
-def run_simulation(payoff_matrix: np.ndarray):
-    results = np.empty((nb_runs, nb_time_steps, nb_strategies))
-    for run in range(nb_runs):
-        network = WellMixed(100)
-        for timestep in range(nb_time_steps):
+def simulation_single_run(payoff_matrix: np.ndarray, pop_size: int = 500):
+    results = np.empty((nb_time_steps, nb_strategies))
+    network = WellMixed(pop_size)
+    for timestep in range(nb_time_steps):
+        for _ in range(pop_size):  # Each MC step is the size of population
             network = simulation_step(network, payoff_matrix)
-            results[run, timestep] = network.get_ratios()
+        results[timestep] = network.get_ratios()
+    return results
+
+
+def run_simulation(payoff_matrix: np.ndarray, pop_size: int = 500):
+    results = np.empty((nb_runs, nb_time_steps, nb_strategies))
+    with Pool(processes=n_threads) as p:
+        it = p.imap(simulation_single_run, nb_runs*[payoff_matrix])
+        for run, result in enumerate(it):
+            results[run] = result
     return results
 
 
@@ -220,13 +243,10 @@ ax.set_xlabel("time step, $t$", fontsize=14)
 sns.despine()
 plt.show()
 
-
 # Sweep plot
 
 xs = np.linspace(0, 1, 20)
 rs = np.linspace(0, 1, 20)
-nb_runs = 10  # 1000
-nb_time_steps = 1000
 t = np.arange(0, 10, 10/nb_time_steps)
 
 
@@ -266,8 +286,8 @@ for i, x in enumerate(xs):
     for j, r in enumerate(rs):
         payoff = gen_trust_matrix(x, r)
         result = np.array(run_simulation(payoff))
-        print(x, r)
         final_proportions[i, j] = np.sum(result[:, -1, :], axis=0)/nb_runs
+    print("x =", x)
 plot_heatmaps(final_proportions)
 
 # Research question - what if keep memory of neighbor, can we train for (x,r)?
