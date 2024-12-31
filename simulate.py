@@ -265,7 +265,7 @@ def simulation_single_run(payoff_matrix: np.ndarray, pop_size: int = 500):
 def run_simulation(payoff_matrix: np.ndarray, pop_size: int = 500):
     results = np.empty((nb_runs, nb_time_steps, nb_strategies))
     with Pool(processes=n_threads) as p:
-        it = p.imap(simulation_single_run, nb_runs*[payoff_matrix])
+        it = p.imap_unordered(simulation_single_run, nb_runs*[payoff_matrix])
         for run, result in enumerate(it):
             results[run] = result
     return results
