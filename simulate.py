@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import egttools as egt
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -21,7 +22,7 @@ strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
 # B receives R = 3x(1-r), can Reciprocate (R) or Betray (B)
 # Strategies are a combination of A,B (T,R), (T,B), (N,R), (N,B)
 nb_strategies = 4
-nb_runs = 128
+nb_runs = 10 #128
 nb_time_steps = 20
 n_threads = 16
 
@@ -129,12 +130,12 @@ class WellMixed(AgentNetwork):
 class SquareLattice(AgentNetwork):
     def __init__(self, size):
         self.size = size
-        self.rows = self.size**(1/2)
-        self.cols = self.size**(1/2)
+        self.rows = math.ceil(self.size**(1/2))
+        self.cols = math.ceil(self.size**(1/2))
         self.network = self._create_square_lattice(self.rows, self.cols)
         self.strategies = random.choices(strategy_labels, k=self.size)
 
-    def create_square_lattice(rows, cols):
+    def _create_square_lattice(self, rows, cols):
         G = nx.grid_2d_graph(rows, cols, periodic=True) #must remain to True, otherwise the network is padded
         mapping = {node: idx for idx, node in enumerate(G.nodes)}
         # Relabel nodes in the graph using the mapping 
@@ -155,12 +156,12 @@ class SquareLattice(AgentNetwork):
 class TriangleLattice(AgentNetwork):
     def __init__(self, size):
         self.size = size
-        self.rows = self.size**(1/2)
-        self.cols = self.size**(1/2)
+        self.rows = math.ceil(self.size**(1/2))
+        self.cols = math.ceil(self.size**(1/2))
         self.network = self._create_triangular_lattice(self.rows, self.cols)
         self.strategies = random.choices(strategy_labels, k=self.size)
 
-    def _create_triangular_lattice(rows, cols):
+    def _create_triangular_lattice(self, rows, cols):
         G = nx.triangular_lattice_graph(rows, cols, periodic=True) 
         mapping = {node: idx for idx, node in enumerate(G.nodes)}
         G = nx.relabel_nodes(G, mapping)
@@ -178,12 +179,12 @@ class TriangleLattice(AgentNetwork):
 class HexagonLattice(AgentNetwork):
     def __init__(self, size):
         self.size = size
-        self.rows = self.size**(1/2)
-        self.cols = self.size**(1/2)
+        self.rows = math.ceil(self.size**(1/2))
+        self.cols = math.ceil(self.size**(1/2))
         self.network = self._create_hexagonal_lattice(self.rows, self.cols)
         self.strategies = random.choices(strategy_labels, k=self.size)
 
-    def _create_hexagonal_lattice(rows, cols):
+    def _create_hexagonal_lattice(self, rows, cols):
         G = nx.hexagonal_lattice_graph(rows, cols, periodic=True)
         mapping = {node: idx for idx, node in enumerate(G.nodes)}
         G = nx.relabel_nodes(G, mapping)
@@ -252,9 +253,18 @@ def simulation_step(
     return network
 
 
-def simulation_single_run(payoff_matrix: np.ndarray, pop_size: int = 500):
+def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="WellMixed", pop_size: int = 500):
     results = np.empty((nb_time_steps, nb_strategies))
-    network = WellMixed(pop_size)
+
+    if population_type == "SquareLattice":
+            network = SquareLattice(pop_size)
+    elif population_type == "TriangleLattice":
+            network = TriangleLattice(pop_size)
+    elif population_type == "HexagonLattice":
+            network = HexagonLattice(pop_size)
+    elif population_type == "WellMixed":
+        network = WellMixed(pop_size)
+
     for timestep in range(nb_time_steps):
         for _ in range(pop_size):  # Each MC step is the size of population
             network = simulation_step(network, payoff_matrix)
