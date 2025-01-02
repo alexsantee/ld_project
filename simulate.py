@@ -1,6 +1,6 @@
 import numpy as np
 import math
-import egttools as egt
+# import egttools as egt
 import seaborn as sns
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -11,8 +11,8 @@ import random
 
 from multiprocessing import Pool
 
-from egttools.games import Matrix2PlayerGameHolder
-from scipy.integrate import odeint
+# from egttools.games import Matrix2PlayerGameHolder
+# from scipy.integrate import odeint
 
 colors = ["black", "green", "red", "blue"]
 strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
