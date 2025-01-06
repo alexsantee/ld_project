@@ -200,12 +200,15 @@ def simulation_step(
     N_GAMES = 4
     K = 0.1
 
-    # sample 2 players
-    players = random.sample(range(network.get_size()), N_PLAYERS) # this is for well mixed populations
-    # TODO 
-    # set the size of population back to actual network size, try to find a perfect square that is around 500 (22*22 if I'm not mistaken ? := yes it is 484, which is pair)
-    # pick at random P1 instead, then do network.sample_neighbors() for P2 if the network is any of the lattices
-    # 
+    # sample 2 players according to the lattices requirements if it is a Lattice instance 
+    # else according to the WellMixed population criteria
+    if not isinstance(network, WellMixed):
+        players = random.sample(range(network.get_size()), 1) # this is for well mixed populations
+        players.extend(network.sample_neighbors(players[0],1,replacement=False))
+
+    else:
+        players = random.sample(range(network.get_size()), N_PLAYERS) # this is for well mixed populations
+
     payoffs = N_PLAYERS*[0]
     for play_idx, player in enumerate(players):
         # plays 4 games for each player
