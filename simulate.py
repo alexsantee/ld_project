@@ -14,19 +14,6 @@ from multiprocessing import Pool
 # from egttools.games import Matrix2PlayerGameHolder
 # from scipy.integrate import odeint
 
-colors = ["black", "green", "red", "blue"]
-strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
-
-# Single game (Trust game, binary decision)
-# A receives R = 1 - x + 3xr, can Trust (T) or not (N)
-# B receives R = 3x(1-r), can Reciprocate (R) or Betray (B)
-# Strategies are a combination of A,B (T,R), (T,B), (N,R), (N,B)
-nb_strategies = 4
-nb_runs = 10 #128
-nb_time_steps = 20
-n_threads = 16
-
-
 def act2int(action: str):
     if action == "T" or action == "R":
         return 0
@@ -156,7 +143,7 @@ class SquareLattice(AgentNetwork):
 class TriangleLattice(AgentNetwork):
     def __init__(self, size):
         self.size = size
-        self.rows = math.ceil(self.size**(1/2))
+        self.rows = math.ceil(self.size**(1/2)*2)
         self.cols = math.ceil(self.size**(1/2))
         self.network = self._create_triangular_lattice(self.rows, self.cols)
         self.strategies = random.choices(strategy_labels, k=self.size)
@@ -179,7 +166,7 @@ class TriangleLattice(AgentNetwork):
 class HexagonLattice(AgentNetwork):
     def __init__(self, size):
         self.size = size
-        self.rows = math.ceil(self.size**(1/2))
+        self.rows = math.ceil(self.size**(1/2)/2)
         self.cols = math.ceil(self.size**(1/2))
         self.network = self._create_hexagonal_lattice(self.rows, self.cols)
         self.strategies = random.choices(strategy_labels, k=self.size)
@@ -205,15 +192,6 @@ class HexagonLattice(AgentNetwork):
 # Initializes each player randomly
 # consists in chosing two players P1, P2 and playing the game w/ 4 neighbors
 
-x, r = (0.8, 0.3)
-game_matrix = gen_strategies_matrix(x, r)
-game_matrix = gen_trust_matrix(x, r)
-print(game_matrix)
-# game = Matrix2PlayerGameHolder(4, game_matrix)
-
-t = np.arange(0, nb_time_steps)
-
-
 def simulation_step(
         network: AgentNetwork,
         payoff_matrix: np.ndarray,
@@ -223,7 +201,11 @@ def simulation_step(
     K = 0.1
 
     # sample 2 players
-    players = random.sample(range(network.get_size()), N_PLAYERS)
+    players = random.sample(range(network.get_size()), N_PLAYERS) # this is for well mixed populations
+    # TODO 
+    # set the size of population back to actual network size, try to find a perfect square that is around 500 (22*22 if I'm not mistaken ? := yes it is 484, which is pair)
+    # pick at random P1 instead, then do network.sample_neighbors() for P2 if the network is any of the lattices
+    # 
     payoffs = N_PLAYERS*[0]
     for play_idx, player in enumerate(players):
         # plays 4 games for each player
@@ -253,7 +235,7 @@ def simulation_step(
     return network
 
 
-def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="WellMixed", pop_size: int = 500):
+def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="WellMixed", pop_size: int = 484):
     results = np.empty((nb_time_steps, nb_strategies))
 
     if population_type == "SquareLattice":
@@ -272,7 +254,7 @@ def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="WellM
     return results
 
 
-def run_simulation(payoff_matrix: np.ndarray, pop_size: int = 500):
+def run_simulation(payoff_matrix: np.ndarray, pop_size: int = 484):
     results = np.empty((nb_runs, nb_time_steps, nb_strategies))
     with Pool(processes=n_threads) as p:
         it = p.imap_unordered(simulation_single_run, nb_runs*[payoff_matrix])
@@ -280,6 +262,57 @@ def run_simulation(payoff_matrix: np.ndarray, pop_size: int = 500):
             results[run] = result
     return results
 
+
+def plot_heatmaps(avg_results):
+    fig, axs = plt.subplots(figsize=(10, 5), ncols=2, nrows=2)
+
+    im = axs[0, 0].imshow(avg_results[:, :, 0], cmap="inferno", vmin=0.0, vmax=1.0,
+                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
+    axs[0, 1].imshow(avg_results[:, :, 1], cmap="inferno", vmin=0.0, vmax=1.0,
+                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
+    axs[1, 0].imshow(avg_results[:, :, 2], cmap="inferno", vmin=0.0, vmax=1.0,
+                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
+    axs[1, 1].imshow(avg_results[:, :, 3], cmap="inferno", vmin=0.0, vmax=1.0,
+                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
+
+    axs[0, 0].text(0.8, 0.8, "(T,R)", backgroundcolor="white")
+    axs[0, 1].text(0.8, 0.8, "(T,B)", backgroundcolor="white")
+    axs[1, 0].text(0.8, 0.8, "(N,R)", backgroundcolor="white")
+    axs[1, 1].text(0.8, 0.8, "(N,B)", backgroundcolor="white")
+
+    axs[0, 0].set_xticks([])
+    axs[0, 1].set_xticks([])
+    axs[0, 1].set_yticks([])
+    axs[1, 1].set_yticks([])
+
+    axs[0, 0].set_ylabel("$r$", fontsize=14)
+    axs[1, 0].set_ylabel("$r$", fontsize=14)
+    axs[1, 0].set_xlabel("$x$", fontsize=14)
+    axs[1, 1].set_xlabel("$x$", fontsize=14)
+
+    fig.colorbar(im, ax=axs[:, :])
+    plt.show()
+
+
+colors = ["black", "green", "red", "blue"]
+strategy_labels = ["(T,R)", "(T,B)", "(N,R)", "(N,B)"]
+
+# Single game (Trust game, binary decision)
+# A receives R = 1 - x + 3xr, can Trust (T) or not (N)
+# B receives R = 3x(1-r), can Reciprocate (R) or Betray (B)
+# Strategies are a combination of A,B (T,R), (T,B), (N,R), (N,B)
+nb_strategies = 4
+nb_runs = 10 #128
+nb_time_steps = 20
+n_threads = 16
+
+x, r = (0.8, 0.3)
+game_matrix = gen_strategies_matrix(x, r)
+game_matrix = gen_trust_matrix(x, r)
+print(game_matrix)
+# game = Matrix2PlayerGameHolder(4, game_matrix)
+
+t = np.arange(0, nb_time_steps)
 
 results = run_simulation(game_matrix)
 results = np.asarray(results)
@@ -314,38 +347,6 @@ plt.show()
 xs = np.linspace(0, 1, 20)
 rs = np.linspace(0, 1, 20)
 t = np.arange(0, 10, 10/nb_time_steps)
-
-
-def plot_heatmaps(avg_results):
-    fig, axs = plt.subplots(figsize=(10, 5), ncols=2, nrows=2)
-
-    im = axs[0, 0].imshow(avg_results[:, :, 0], cmap="inferno", vmin=0.0, vmax=1.0,
-                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
-    axs[0, 1].imshow(avg_results[:, :, 1], cmap="inferno", vmin=0.0, vmax=1.0,
-                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
-    axs[1, 0].imshow(avg_results[:, :, 2], cmap="inferno", vmin=0.0, vmax=1.0,
-                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
-    axs[1, 1].imshow(avg_results[:, :, 3], cmap="inferno", vmin=0.0, vmax=1.0,
-                     origin="lower", extent=[0, 1, 0, 1], aspect=0.5,)
-
-    axs[0, 0].text(0.8, 0.8, "(T,R)", backgroundcolor="white")
-    axs[0, 1].text(0.8, 0.8, "(T,B)", backgroundcolor="white")
-    axs[1, 0].text(0.8, 0.8, "(N,R)", backgroundcolor="white")
-    axs[1, 1].text(0.8, 0.8, "(N,B)", backgroundcolor="white")
-
-    axs[0, 0].set_xticks([])
-    axs[0, 1].set_xticks([])
-    axs[0, 1].set_yticks([])
-    axs[1, 1].set_yticks([])
-
-    axs[0, 0].set_ylabel("$r$", fontsize=14)
-    axs[1, 0].set_ylabel("$r$", fontsize=14)
-    axs[1, 0].set_xlabel("$x$", fontsize=14)
-    axs[1, 1].set_xlabel("$x$", fontsize=14)
-
-    fig.colorbar(im, ax=axs[:, :])
-    plt.show()
-
 
 final_proportions = np.empty((xs.shape[0], rs.shape[0], nb_strategies))
 for i, x in enumerate(xs):
