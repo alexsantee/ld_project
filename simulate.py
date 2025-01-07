@@ -185,6 +185,50 @@ class HexagonLattice(AgentNetwork):
             agents = random.sample(neighbors, n)
         return agents
 
+class ScaleFree(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.network = self._create_scale_free_network()
+        self.strategies = random.choices(strategy_labels, k=self.size)
+
+    def _create_scale_free_network(self):
+        # second argument here is the number of edges to consider when adding a new node to the graph
+        G = nx.barabasi_albert_graph(self.size, 2) 
+        mapping = {node: idx for idx, node in enumerate(G.nodes)}
+        G = nx.relabel_nodes(G, mapping)
+        return G
+    
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = list(self.network.neighbors(agent))
+        if replacement or len(neighbors) < n:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
+    
+
+
+class Random(AgentNetwork):
+    def __init__(self, size):
+        self.size = size
+        self.network = self._create_random_network()
+        self.strategies = random.choices(strategy_labels, k=self.size)
+
+    def _create_random_network(self):
+        G = nx.erdos_renyi_graph(self.size, 0.3)
+        mapping = {node: idx for idx, node in enumerate(G.nodes)}
+        G = nx.relabel_nodes(G, mapping)
+        return G
+    
+    def sample_neighbors(self, agent, n=4, replacement=True):
+        neighbors = list(self.network.neighbors(agent))
+        if replacement or len(neighbors) < n:
+            agents = np.random.choice(neighbors, n)
+        else:
+            agents = random.sample(neighbors, n)
+        return agents
+    
+
 # Simulation
 # Copy of other players actions with probability from eq. 2.1
 # 1 / ( 1 + e^(tot_payoff_p2-tot_payoff_p1)/K ) for K=0.1
@@ -238,15 +282,26 @@ def simulation_step(
     return network
 
 
-def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="WellMixed", pop_size: int = 484):
+def simulation_single_run(payoff_matrix: np.ndarray, population_type: str="ScaleFree", pop_size=484):
     results = np.empty((nb_time_steps, nb_strategies))
 
     if population_type == "SquareLattice":
-            network = SquareLattice(pop_size)
+        network = SquareLattice(pop_size)
+        #print(network.network.number_of_nodes())
+
     elif population_type == "TriangleLattice":
-            network = TriangleLattice(pop_size)
+        network = TriangleLattice(pop_size)
+        #print(network.network.number_of_nodes())
+
     elif population_type == "HexagonLattice":
-            network = HexagonLattice(pop_size)
+        network = HexagonLattice(pop_size)
+        #print(network.network.number_of_nodes())
+    elif population_type == "ScaleFree":
+        network = ScaleFree(pop_size)
+        #print(network.network.number_of_nodes())
+    elif population_type == "Random":
+        network = Random(pop_size)
+        #print(network.network.number_of_nodes())
     elif population_type == "WellMixed":
         network = WellMixed(pop_size)
 
