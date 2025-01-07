@@ -365,10 +365,7 @@ nb_time_steps = 20
 n_threads = 16
 
 x, r = (0.8, 0.3)
-game_matrix = gen_strategies_matrix(x, r)
 game_matrix = gen_trust_matrix(x, r)
-print(game_matrix)
-# game = Matrix2PlayerGameHolder(4, game_matrix)
 
 t = np.arange(0, nb_time_steps)
 
@@ -381,7 +378,7 @@ results = np.asarray(results)
 
 # Plot for population evolution
 
-fig, ax = plt.subplots(figsize=(10, 3))
+fig, ax = plt.subplots(figsize=(10, 5))
 
 for run in results:
     for i in range(nb_strategies):
@@ -395,7 +392,9 @@ for i in range(nb_strategies):
 ax.set_title(f"evolution for $x$={x} and $r$={r}")
 ax.legend(frameon=False, bbox_to_anchor=(1.1, 1, 0, 0), loc='upper right')
 ax.set_ylabel("frequency", fontsize=14)
+ax.set_yscale("log")
 ax.set_xlabel("time step, $t$", fontsize=14)
+ax.set_xscale("log")
 # ax.set_ylim(-0.2, 1.2)
 sns.despine()
 plt.show()
@@ -411,7 +410,8 @@ for i, x in enumerate(xs):
     for j, r in enumerate(rs):
         payoff = gen_trust_matrix(x, r)
         result = np.array(run_simulation(payoff))
-        final_proportions[i, j] = np.sum(result[:, -1, :], axis=0)/nb_runs
+        # not sure about order i,j looks transposed
+        final_proportions[j, i] = np.sum(result[:, -1, :], axis=0)/nb_runs
     print("x =", x)
 plot_heatmaps(final_proportions)
 
